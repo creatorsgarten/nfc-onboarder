@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Creatorsgarten NFC onboarder</title>
+    <style>
+      body {
+        background-color: #f0f0f0;
+        color: #000;
+      }
+      .screen {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        flex-direction: column;
+      }
+      .screen:not([data-showing="true"]) {
+        display: none;
+      }
+      .info {
+        color: #555;
+      }
+      .red {
+        background-color: #c00;
+        color: #fff;
+      }
+      .green {
+        background-color: #080;
+        color: #fff;
+      }
+
+      body[data-debug="true"] #screens {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1em;
+      }
+      body[data-debug="true"] .screen::before {
+        position: absolute;
+        content: attr(id);
+        bottom: 3px;
+        right: 3px;
+      }
+      body[data-debug="true"] .screen {
+        display: flex;
+        position: relative;
+        width: 360px;
+        height: 640px;
+        border: 1px solid #f00;
+      }
+      .unsupported {
+        font-weight: 700;
+        font-size: 3em;
+      }
+    </style>
+  </head>
+  <body data-debug="false">
+    <div id="screens">
+      <div id="begin" class="screen" data-showing="true">
+        <button id="scan">Click to enable NFC</button>
+      </div>
+      <div id="activating" class="screen info">
+        <div>Activating NFC reader...</div>
+      </div>
+      <div id="onboarding" class="screen info">
+        <div>Onboarding tag...</div>
+      </div>
+      <div id="waiting" class="screen info">
+        <div>Tap your NFC tag...</div>
+      </div>
+      <div id="already" class="screen green">
+        <div>NFC tag already onboarded.</div>
+        <div>Serial number: <span class="sn"></span></div>
+      </div>
+      <div id="success" class="screen green">
+        <div>NFC tag has been onboarded.</div>
+        <div>Serial number: <span class="sn"></span></div>
+      </div>
+      <div id="error" class="screen red">
+        <div>Something went wrong!</div>
+        <pre id="errorMessage" wrap><code id="errorText"></code></pre>
+      </div>
+    </div>
+    <script type="module">
+      const $ = (selector) => document.querySelector(selector);
+      const setScreen = (id) => {
+        document.querySelectorAll(".screen").forEach((screen) => {
+          screen.dataset.showing = screen.id === id;
+        });
+      };
+      for (const snSpan of document.querySelectorAll(".sn")) {
+        snSpan.textContent = "01:23:45:67:";
+      }
+      if (typeof NDEFReader === "undefined") {
+        document.body.dataset.debug = true;
+        const msg = document.createElement("div");
+        msg.className = "unsupported";
+        msg.innerHTML = "NFC is not supported on this device.";
+        document.body.insertBefore(msg, document.body.firstChild);
+      }
+      $("#scan").addEventListener("click", async () => {
+        try {
+          const reader = new NDEFReader();
+          setScreen("activating");
+          await reader.scan();
+          setScreen("waiting");
+          reader.onreading = async (event) => {
+            const { timeStamp, message, serialNumber } = event;
+            const stringifyRecords = () =>
+              JSON.stringify(
+                Array.from(message.records, (r) => {
+                  let data = r.data;
+                  if (r.recordType === "mime") {
+                    const prefix = `data:${r.mediaType};base64,`;
+                    const bytes = new Uint8Array(
+                      data.buffer,
+                      data.byteOffset,
+                      data.byteLength
+                    );
+                    data = prefix + btoa(String.fromCharCode(...bytes));
+                  } else if (data instanceof DataView) {
+                    const decoder = new TextDecoder();
+                    data = decoder.decode(data);
+                  }
+                  if (typeof data !== "string") data = String(data);
+                  return { recordType: r.recordType, data: data };
+                }),
+                null,
+                2
+              );
+            const sn = serialNumber.replace(/:/g, "");
+            const expectedUrl = `https://grtn.org/inventory/nfc/${sn}`;
+            for (const snSpan of document.querySelectorAll(".sn")) {
+              snSpan.textContent = serialNumber;
+            }
+            if (
+              message.records.length === 1 &&
+              message.records[0].recordType === "url" &&
+              new TextDecoder().decode(message.records[0].data) === expectedUrl
+            ) {
+              setScreen("already");
+            } else if (
+              message.records.length === 0 ||
+              (message.records.length === 1 &&
+                message.records[0].recordType === "empty")
+            ) {
+              setScreen("onboarding");
+              try {
+                await reader.write({
+                  records: [{ recordType: "url", data: expectedUrl }],
+                });
+                setScreen("success");
+              } catch (e) {
+                setScreen("error");
+                $("#errorText").textContent = `${e}`;
+              }
+            } else {
+              setScreen("error");
+              $(
+                "#errorText"
+              ).textContent = `Non-empty tag scanned, refusing to replace. Please clear the tag first.`;
+            }
+          };
+        } catch (error) {
+          alert(`Unable to scan NFC: ${error}`);
+        }
+      });
+    </script>
+  </body>
+</html>
