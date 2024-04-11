@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Creatorsgarten NFC onboarder</title>
+    <title>NFC onboarder</title>
     <style>
       body {
         background-color: #f0f0f0;
@@ -11,6 +11,7 @@
         font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
           Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue",
           sans-serif;
+        line-height: 1.25;
       }
       .screen {
         position: fixed;
@@ -19,7 +20,6 @@
         justify-content: center;
         align-items: center;
         flex-direction: column;
-        gap: 1rem;
         padding: 1.5rem;
       }
       .screen:not([data-showing="true"]) {
@@ -36,6 +36,9 @@
       .green {
         background-color: #080;
         color: #fff;
+      }
+      .center {
+        text-align: center;
       }
 
       body[data-debug="true"] #screens {
@@ -59,23 +62,110 @@
       .unsupported {
         font-weight: 700;
         font-size: 3em;
+        margin-bottom: 1rem;
       }
       success-warning-message {
         display: block;
-        background: #222;
+        background: #2224;
         color: #ff6;
-        padding: 1rem;
+        padding: 0.5rem 0.75rem;
+        border-radius: 0.25rem;
       }
       h1 {
         text-align: center;
         font-size: 1.5em;
+        margin: 0 0 0.5rem;
+      }
+      p {
+        margin: 0;
+      }
+      .v-stack {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+      }
+
+      .form-control input {
+        width: 100%;
+        box-sizing: border-box;
+      }
+
+      .hint {
+        font-size: 0.8em;
+        color: #0008;
+      }
+
+      .form-control input {
+        padding: 0.5rem;
+        border: 1px solid #888;
+        border-radius: 0.25rem;
+      }
+      .form-control.is-success {
+        color: #080;
+      }
+      .form-control.is-success input {
+        border-color: #080;
+        color: #080;
+      }
+
+      button {
+        padding: 0.5rem 1rem;
+        border: 1px solid #888;
+        border-radius: 0.25rem;
+        cursor: pointer;
+        font-size: 1em;
+        font-family: inherit;
+        background: linear-gradient(180deg, #fff, #eee);
+        box-shadow: 0 1px 2px #888;
+      }
+
+      #errorText {
+        width: 100%;
+        box-sizing: border-box;
+        background: #000;
+        color: #fff;
+        padding: 0.5rem 0.75rem;
       }
     </style>
   </head>
   <body data-debug="false">
     <div id="screens">
-      <div id="begin" class="screen" data-showing="true">
-        <button id="scan">Click to enable NFC</button>
+      <div id="welcome" class="screen">
+        <div class="v-stack">
+          <h1>NFC onboarder</h1>
+          <p>
+            You can use this web application to write URLs to blank NFC tags.
+            Once onboarded, when someone taps the tag with their phone, it will
+            open the URL you specify.
+          </p>
+          <form class="v-stack">
+            <p class="form-control">
+              <label for="url">Configure URL:</label>
+              <input type="text" id="url" value="" name="url" />
+              <span class="hint"
+                >{sn} will be replaced with the tag's serial number</span
+              >
+            </p>
+            <button type="submit" id="begin">Begin</button>
+          </form>
+        </div>
+      </div>
+      <div id="begin" class="screen">
+        <div class="v-stack">
+          <h1>NFC onboarder</h1>
+          <p>
+            This web application will onboard blank NFC tags by writing the
+            following URL when you tap the tag:
+          </p>
+          <div class="form-control is-success">
+            <label for="targetUrl">Target URL configured:</label>
+            <input type="text" id="targetUrl" readonly value="https://" />
+            <span class="hint"
+              >{sn} will be replaced with the tag's serial number</span
+            >
+          </div>
+          <button id="scan">Activate NFC reader</button>
+        </div>
       </div>
       <div id="activating" class="screen info">
         <div>Activating NFC reader...</div>
@@ -87,32 +177,37 @@
         <div>Tap your NFC tag...</div>
       </div>
       <div id="already" class="screen green">
-        <h1>NFC tag already onboarded.</h1>
-        <div>Serial number: <span class="sn"></span></div>
-        <div><success-warning-message></success-warning-message></div>
+        <div class="v-stack">
+          <h1>NFC tag already onboarded.</h1>
+          <div class="center">Serial number: <strong class="sn"></strong></div>
+          <div><success-warning-message></success-warning-message></div>
+        </div>
       </div>
       <div id="success" class="screen green">
-        <h1>NFC tag has been onboarded.</h1>
-        <div>Serial number: <span class="sn"></span></div>
-        <div><success-warning-message></success-warning-message></div>
+        <div class="v-stack">
+          <h1>NFC tag has been onboarded.</h1>
+          <div class="center">Serial number: <strong class="sn"></strong></div>
+          <div><success-warning-message></success-warning-message></div>
+        </div>
       </div>
       <div id="error" class="screen red">
-        <div>Something went wrong!</div>
-        <pre
-          id="errorMessage"
-          wrap
-        ><code id="errorText">error message</code></pre>
+        <div class="v-stack">
+          <div>Something went wrong!</div>
+          <textarea id="errorText" readonly rows="10" cols="36"></textarea>
+        </div>
       </div>
     </div>
     <script type="module">
       const $ = (selector) => document.querySelector(selector);
+      const searchParams = new URLSearchParams(location.search);
+      const url = searchParams.get("url") || "";
       const setScreen = (id) => {
         document.querySelectorAll(".screen").forEach((screen) => {
           screen.dataset.showing = screen.id === id;
         });
       };
       for (const snSpan of document.querySelectorAll(".sn")) {
-        snSpan.textContent = "01:23:45:67:";
+        snSpan.textContent = "01:23:45:67:89:AB:CD";
       }
       if (typeof NDEFReader === "undefined") {
         document.body.dataset.debug = true;
@@ -120,6 +215,12 @@
         msg.className = "unsupported";
         msg.innerHTML = "NFC is not supported on this device.";
         document.body.insertBefore(msg, document.body.firstChild);
+      }
+      if (url) {
+        $("#targetUrl").value = url;
+        setScreen("begin");
+      } else {
+        setScreen("welcome");
       }
       $("#scan").addEventListener("click", async () => {
         try {
@@ -152,7 +253,7 @@
                 2
               );
             const sn = serialNumber.replace(/:/g, "");
-            const expectedUrl = `https://grtn.org/inventory/nfc/${sn}`;
+            const expectedUrl = url.replaceAll("{sn}", sn);
             for (const snSpan of document.querySelectorAll(".sn")) {
               snSpan.textContent = serialNumber;
             }
@@ -175,13 +276,13 @@
                 setScreen("success");
               } catch (e) {
                 setScreen("error");
-                $("#errorText").textContent = `${e}`;
+                $("#errorText").value = `${e}`;
               }
             } else {
               setScreen("error");
               $(
                 "#errorText"
-              ).textContent = `Non-empty tag scanned, refusing to replace. Please clear the tag first.`;
+              ).value = `Non-empty tag scanned, refusing to replace. Please clear the tag first.`;
             }
           };
         } catch (error) {
