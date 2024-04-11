@@ -1,6 +1,9 @@
 # nfc-onboarder
 
-This application prepares an NFC tag by writing a URL to it. You can configure which URL to write to the tag by setting the `?url=` query parameter in the URL of the page.
+This web application prepares an NFC tag by writing a URL to it. You can configure which URL to write to the tag by setting the `?url=` query parameter in the URL of the page.
+
+> [!NOTE]
+> Currently, only Android Chrome is supported. See <https://caniuse.com/webnfc>.
 
 ![screenshot](https://github.com/creatorsgarten/nfc-onboarder/assets/193136/184448af-0cd6-4fb5-a188-a0f4e99622fb)
 
