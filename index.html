@@ -126,6 +126,10 @@
         color: #fff;
         padding: 0.5rem 0.75rem;
       }
+
+      .dangerous {
+        color: #e11;
+      }
     </style>
   </head>
   <body data-debug="false">
@@ -177,6 +181,9 @@
       <div id="onboarding" class="screen info">
         <div>Onboarding tag...</div>
       </div>
+      <div id="locking" class="screen info">
+        <div>Locking tag...</div>
+      </div>
       <div id="waiting" class="screen info">
         <div>Tap your NFC tag...</div>
       </div>
@@ -194,6 +201,20 @@
           <div><success-warning-message></success-warning-message></div>
         </div>
       </div>
+      <div id="waitingLock" class="screen info">
+        <div class="v-stack">
+          <div class="center dangerous">
+            Tap your NFC tag<br />to make it read-only
+          </div>
+          <button type="submit" id="cancelLock">Cancel</button>
+        </div>
+      </div>
+      <div id="locked" class="screen green">
+        <div class="v-stack">
+          <h1>NFC tag has been locked.</h1>
+          <div class="center">Serial number: <strong class="sn"></strong></div>
+        </div>
+      </div>
       <div id="error" class="screen red">
         <div class="v-stack">
           <div>Something went wrong!</div>
@@ -205,6 +226,10 @@
       const $ = (selector) => document.querySelector(selector);
       const searchParams = new URLSearchParams(location.search);
       const url = searchParams.get("url") || "";
+
+      let lastExpectedUrl = "";
+      let lockUrl = "";
+
       const setScreen = (id) => {
         document.querySelectorAll(".screen").forEach((screen) => {
           screen.dataset.showing = screen.id === id;
@@ -241,6 +266,10 @@
         return Array.from(new Uint8Array(signature))
           .map((b) => b.toString(16).padStart(2, "0"))
           .join("");
+      }
+      function showError(message) {
+        setScreen("error");
+        $("#errorText").value = message;
       }
       $("#scan").addEventListener("click", async () => {
         try {
@@ -293,12 +322,33 @@
             for (const snSpan of document.querySelectorAll(".sn")) {
               snSpan.textContent = serialNumber;
             }
+            lastExpectedUrl = expectedUrl;
             if (
               message.records.length === 1 &&
               message.records[0].recordType === "url" &&
               new TextDecoder().decode(message.records[0].data) === expectedUrl
             ) {
-              setScreen("already");
+              if (lockUrl === expectedUrl) {
+                lockUrl = "";
+                setScreen("locking");
+                try {
+                  await reader.makeReadOnly();
+                  setScreen("locked");
+                } catch (e) {
+                  showError(`Unable to lock: ${e}`);
+                }
+              } else if (lockUrl) {
+                showError(
+                  "The tag being locked is not the same as the tag being onboarded. Cancelling lock."
+                );
+              } else {
+                setScreen("already");
+              }
+            } else if (lockUrl) {
+              lockUrl = "";
+              showError(
+                "The tag being locked is not the same as the tag being onboarded. Cancelling lock."
+              );
             } else if (
               message.records.length === 0 ||
               (message.records.length === 1 &&
@@ -311,19 +361,22 @@
                 });
                 setScreen("success");
               } catch (e) {
-                setScreen("error");
-                $("#errorText").value = `${e}`;
+                showError(`Unable to onboard: ${e}`);
               }
             } else {
               setScreen("error");
-              $(
-                "#errorText"
-              ).value = `Non-empty tag scanned, refusing to replace. Please clear the tag first.`;
+              showError(
+                `Non-empty tag scanned, refusing to replace. Please clear the tag first.`
+              );
             }
           };
         } catch (error) {
           alert(`Unable to scan NFC: ${error}`);
         }
+      });
+      $("#cancelLock").addEventListener("click", () => {
+        lockUrl = "";
+        setScreen("waiting");
       });
       customElements.define(
         "success-warning-message",
@@ -331,11 +384,19 @@
           constructor() {
             super();
             this.innerHTML = `
-            <small>
-              <strong>Note:</strong> This NFC tag is still writable.
-              To prevent writing, use the “NFC Tools” app to either permanently lock the tag or set a write password.
-            </small>
-          `;
+              <div class="v-stack" style="gap: 0.5em">
+                <small>
+                  <strong>Note:</strong> This NFC tag may still be writable.
+                  You can permanently lock this tag to prevent further writes,
+                  or use the “NFC Tools” app to set up a write password.
+                </small>
+                <button class="js-lock-tag">Permanently lock</button>
+              </div>
+            `;
+            this.querySelector(".js-lock-tag").addEventListener("click", () => {
+              setScreen("waitingLock");
+              lockUrl = lastExpectedUrl;
+            });
           }
         }
       );
